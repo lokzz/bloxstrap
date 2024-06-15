@@ -58,8 +58,8 @@
         </controls:OptionControl>
 
         <controls:OptionControl 
-            Header="{x:Static resources:Strings.Menu_Integrations_AllowMultipleInstances_Title}" 
-            Description="{x:Static resources:Strings.Menu_Integrations_AllowMultipleInstances_Description}">
+            Header="AllowMultipleInstances_title" 
+            Description="AllowMultipleInstances_Description">
             <ui:ToggleSwitch IsChecked="{Binding MultiInstanceLaunchingEnabled, Mode=TwoWay}" />
         </controls:OptionControl>
 
