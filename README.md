@@ -1,5 +1,5 @@
 > [!CAUTION]
-> This is the only official place to download Bloxstrap. Any other websites offering downloads or claiming to be us are not controlled by us.
+> This is not the offical place to download Bloxstrap.
 
 # <img src="https://github.com/pizzaboxer/bloxstrap/raw/main/Images/Bloxstrap.png" width="48"/> Bloxstrap
 
