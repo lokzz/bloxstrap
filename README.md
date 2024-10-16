@@ -1,10 +1,11 @@
 > [!CAUTION]
 > This is not the offical place to download Bloxstrap.
+> 
 > Go back to bloxstraplabs/bloxstrap.
 
 
 
-now for the fun people:
+// compile??? whats that??? //
 
 / clone and cd to base folder
 
