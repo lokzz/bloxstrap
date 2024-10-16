@@ -1,10 +1,11 @@
 ﻿using System.Reflection;
-using System.Web;
+using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Threading;
 
-using Windows.Win32;
-using Windows.Win32.Foundation;
+using Microsoft.Win32;
+
+using Bloxstrap.Models.SettingTasks.Base;
 
 namespace Bloxstrap
 {
@@ -15,29 +16,31 @@ namespace Bloxstrap
     {
         public const string ProjectName = "Bloxstrap";
         public const string ProjectRepository = "pizzaboxer/bloxstrap";
+
         public const string RobloxPlayerAppName = "RobloxPlayerBeta";
         public const string RobloxStudioAppName = "RobloxStudioBeta";
 
-        // used only for communicating between app and menu - use Directories.Base for anything else
-        public static string BaseDirectory = null!;
-        public static string? CustomFontLocation;
-
-        public static bool ShouldSaveConfigs { get; set; } = false;
-
-        public static bool IsSetupComplete { get; set; } = true;
-        public static bool IsFirstRun { get; set; } = true;
+        // simple shorthand for extremely frequently used and long string - this goes under HKCU
+        public const string UninstallKey = $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{ProjectName}";
 
         public static LaunchSettings LaunchSettings { get; private set; } = null!;
 
         public static BuildMetadataAttribute BuildMetadata = Assembly.GetExecutingAssembly().GetCustomAttribute<BuildMetadataAttribute>()!;
+
         public static string Version = Assembly.GetExecutingAssembly().GetName().Version!.ToString()[..^2];
 
-        public static NotifyIconWrapper? NotifyIcon { get; private set; }
+        public static readonly MD5 MD5Provider = MD5.Create();
+
+        public static NotifyIconWrapper? NotifyIcon { get; set; }
 
         public static readonly Logger Logger = new();
 
+        public static readonly Dictionary<string, BaseTask> PendingSettingTasks = new();
+
         public static readonly JsonManager<Settings> Settings = new();
+
         public static readonly JsonManager<State> State = new();
+
         public static readonly FastFlagManager FastFlags = new();
 
         public static readonly HttpClient HttpClient = new(
@@ -50,18 +53,10 @@ namespace Bloxstrap
 
         public static void Terminate(ErrorCode exitCode = ErrorCode.ERROR_SUCCESS)
         {
-            if (IsFirstRun)
-            {
-                if (exitCode == ErrorCode.ERROR_CANCELLED)
-                    exitCode = ErrorCode.ERROR_INSTALL_USEREXIT;
-            }
-
             int exitCodeNum = (int)exitCode;
 
             Logger.WriteLine("App::Terminate", $"Terminating with exit code {exitCodeNum} ({exitCode})");
 
-            Settings.Save();
-            State.Save();
             NotifyIcon?.Dispose();
 
             Environment.Exit(exitCodeNum);
@@ -90,6 +85,7 @@ namespace Bloxstrap
                 Frontend.ShowExceptionDialog(exception);
 
             Terminate(ErrorCode.ERROR_INSTALL_FAILURE);
+#endif
         }
 
         private void StartupFinished()
@@ -104,7 +100,9 @@ namespace Bloxstrap
         protected override async void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
-            
+
+            Locale.Initialize();
+
             base.OnStartup(e);
 
             Logger.WriteLine(LOG_IDENT, $"Starting {ProjectName} v{Version}");
@@ -120,51 +118,113 @@ namespace Bloxstrap
             // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
 
-            LaunchSettings = new LaunchSettings(e.Args);
-
-            using (var checker = new InstallChecker())
-            {
-                checker.Check();
-            }
-
-            Paths.Initialize(BaseDirectory);
-
-            // we shouldn't save settings on the first run until the first installation is finished,
-            // just in case the user decides to cancel the install
-            if (!IsFirstRun)
-            {
-                Settings.Load();
-                State.Load();
-                FastFlags.Load();
-            }
-
-            LaunchSettings.ParseRoblox();
-
             HttpClient.Timeout = TimeSpan.FromSeconds(30);
             HttpClient.DefaultRequestHeaders.Add("User-Agent", ProjectRepository);
 
-            // TEMPORARY FILL-IN FOR NEW FUNCTIONALITY
-            // REMOVE WHEN LARGER REFACTORING IS DONE
-            await RobloxDeployment.InitializeConnectivity();
+            LaunchSettings = new LaunchSettings(e.Args);
 
-            if (LaunchSettings.IsUninstall && IsFirstRun)
+            // installation check begins here
+            using var uninstallKey = Registry.CurrentUser.OpenSubKey(UninstallKey);
+            string? installLocation = null;
+            bool fixInstallLocation = false;
+            
+            if (uninstallKey?.GetValue("InstallLocation") is string value)
             {
-                Frontend.ShowMessageBox(Bloxstrap.Resources.Strings.Bootstrapper_FirstRunUninstall, MessageBoxImage.Error);
-                Terminate(ErrorCode.ERROR_INVALID_FUNCTION);
-                return;
+                if (Directory.Exists(value))
+                {
+                    installLocation = value;
+                }
+                else
+                {
+                    // check if user profile folder has been renamed
+                    // honestly, i'll be expecting bugs from this
+                    var match = Regex.Match(value, @"^[a-zA-Z]:\\Users\\([^\\]+)", RegexOptions.IgnoreCase);
+
+                    if (match.Success)
+                    {
+                        string newLocation = value.Replace(match.Value, Paths.UserProfile, StringComparison.InvariantCultureIgnoreCase);
+
+                        if (Directory.Exists(newLocation))
+                        {
+                            installLocation = newLocation;
+                            fixInstallLocation = true;
+                        }
+                    }
+                }
             }
 
-            // we shouldn't save settings on the first run until the first installation is finished,
-            // just in case the user decides to cancel the install
-            if (!IsFirstRun)
+            // silently change install location if we detect a portable run
+            if (installLocation is null && Directory.GetParent(Paths.Process)?.FullName is string processDir)
             {
+                var files = Directory.GetFiles(processDir).Select(x => Path.GetFileName(x)).ToArray();
+
+                // check if settings.json and state.json are the only files in the folder
+                if (files.Length <= 3 && files.Contains("Settings.json") && files.Contains("State.json"))
+                {
+                    installLocation = processDir;
+                    fixInstallLocation = true;
+                }
+            }
+
+            if (installLocation is null)
+            {
+                Logger.Initialize(true);
+                LaunchHandler.LaunchInstaller();
+            }
+            else
+            {
+                if (fixInstallLocation)
+                {
+                    var installer = new Installer
+                    {
+                        InstallLocation = installLocation,
+                        IsImplicitInstall = true
+                    };
+
+                    if (installer.CheckInstallLocation())
+                    {
+                        Logger.WriteLine(LOG_IDENT, $"Changing install location to '{installLocation}'");
+                        installer.DoInstall();
+                    }
+                }
+
+                Paths.Initialize(installLocation);
+
+                // ensure executable is in the install directory
+                if (Paths.Process != Paths.Application && !File.Exists(Paths.Application))
+                    File.Copy(Paths.Process, Paths.Application);
+
                 Logger.Initialize(LaunchSettings.IsUninstall);
 
-                if (!Logger.Initialized)
+                if (!Logger.Initialized && !Logger.NoWriteMode)
                 {
                     Logger.WriteLine(LOG_IDENT, "Possible duplicate launch detected, terminating.");
                     Terminate();
                 }
+
+                Settings.Load();
+                State.Load();
+                FastFlags.Load();
+
+                // we can only parse them now as settings need
+                // to be loaded first to know what our channel is
+                LaunchSettings.ParseRoblox();
+
+                if (!Locale.SupportedLocales.ContainsKey(Settings.Prop.Locale))
+                {
+                    Settings.Prop.Locale = "nil";
+                    Settings.Save();
+                }
+
+                Locale.Set(Settings.Prop.Locale);
+
+                if (!LaunchSettings.IsUninstall)
+                    Installer.HandleUpgrade();
+
+                LaunchHandler.ProcessLaunchArgs();
+            }
+
+            Terminate();
             }
 
             if (!LaunchSettings.IsUninstall && !LaunchSettings.IsMenuLaunch)

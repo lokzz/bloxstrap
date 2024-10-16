@@ -9,12 +9,14 @@
 
         public readonly List<string> Backlog = new();
         public bool Initialized = false;
+        public bool NoWriteMode = false;
         public string? FileLocation;
 
         public void Initialize(bool useTempDir = false)
         {
             const string LOG_IDENT = "Logger::Initialize";
 
+            // TODO: <Temp>/Bloxstrap/Logs/
             string directory = useTempDir ? Path.Combine(Paths.LocalAppData, "Temp") : Path.Combine(Paths.Base, "Logs");
             string timestamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'");
             string filename = $"{App.ProjectName}_{timestamp}.log";
@@ -43,6 +45,23 @@
             catch (IOException)
             {
                 WriteLine(LOG_IDENT, "Failed to initialize because log file already exists");
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (NoWriteMode)
+                    return;
+
+                WriteLine(LOG_IDENT, $"Failed to initialize because Bloxstrap cannot write to {directory}");
+
+                Frontend.ShowMessageBox(
+                    String.Format(Resources.Strings.Logger_NoWriteMode, directory), 
+                    System.Windows.MessageBoxImage.Warning, 
+                    System.Windows.MessageBoxButton.OK
+                );
+
+                NoWriteMode = true;
+
                 return;
             }
             
@@ -93,10 +112,11 @@
 
         public void WriteException(string identifier, Exception ex)
         {
-            Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
             Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
 
             WriteLine($"[{identifier}] {ex}");
+
+            Thread.CurrentThread.CurrentUICulture = Locale.CurrentCulture;
         }
 
         private async void WriteToLog(string message)

@@ -2,18 +2,23 @@
 
 using Bloxstrap.UI.Elements.Bootstrapper;
 using Bloxstrap.UI.Elements.Dialogs;
-using Bloxstrap.UI.Elements.Menu;
+using Bloxstrap.UI.Elements.Settings;
+using Bloxstrap.UI.Elements.Installer;
+using System.Drawing;
 
 namespace Bloxstrap.UI
 {
     static class Frontend
     {
-        public static void ShowMenu(bool showAlreadyRunningWarning = false) => new MainWindow(showAlreadyRunningWarning).ShowDialog();
-
         public static MessageBoxResult ShowMessageBox(string message, MessageBoxImage icon = MessageBoxImage.None, MessageBoxButton buttons = MessageBoxButton.OK, MessageBoxResult defaultResult = MessageBoxResult.None)
         {
+            App.Logger.WriteLine("Frontend::ShowMessageBox", message);
+
             if (App.LaunchSettings.IsQuiet)
                 return defaultResult;
+
+            if (!App.LaunchSettings.IsRobloxLaunch)
+                return ShowFluentMessageBox(message, icon, buttons);
 
             switch (App.Settings.Prop.BootstrapperStyle)
             {
@@ -21,15 +26,10 @@ namespace Bloxstrap.UI
                 case BootstrapperStyle.ClassicFluentDialog:
                 case BootstrapperStyle.FluentAeroDialog:
                 case BootstrapperStyle.ByfronDialog:
-                    return Application.Current.Dispatcher.Invoke(new Func<MessageBoxResult>(() =>
-                    {
-                        var messagebox = new FluentMessageBox(message, icon, buttons);
-                        messagebox.ShowDialog();
-                        return messagebox.Result;
-                    }));
+                    return ShowFluentMessageBox(message, icon, buttons);
 
                 default:
-                    return System.Windows.MessageBox.Show(message, App.ProjectName, buttons, icon);
+                    return MessageBox.Show(message, App.ProjectName, buttons, icon);
             }
         }
 
@@ -41,11 +41,11 @@ namespace Bloxstrap.UI
             });
         }
 
-        public static void ShowConnectivityDialog(string targetName, string description, Exception exception)
+        public static void ShowConnectivityDialog(string title, string description, Exception exception)
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
-                new ConnectivityDialog(targetName, description, exception).ShowDialog();
+                new ConnectivityDialog(title, description, exception).ShowDialog();
             });
         }
 
@@ -63,6 +63,16 @@ namespace Bloxstrap.UI
                 BootstrapperStyle.FluentAeroDialog => new FluentDialog(true),
                 _ => new FluentDialog(false)
             };
+        }
+
+        private static MessageBoxResult ShowFluentMessageBox(string message, MessageBoxImage icon, MessageBoxButton buttons)
+        {
+            return Application.Current.Dispatcher.Invoke(new Func<MessageBoxResult>(() =>
+            {
+                var messagebox = new FluentMessageBox(message, icon, buttons);
+                messagebox.ShowDialog();
+                return messagebox.Result;
+            }));
         }
     }
 }

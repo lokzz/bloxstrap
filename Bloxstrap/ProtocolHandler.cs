@@ -66,7 +66,6 @@ namespace Bloxstrap
         public static void EnrollChannel(string channel)
         {
             ChangeChannel(channel);
-            App.State.Prop.LastEnrolledChannel = channel;
             App.State.Save();
         }
 
@@ -74,9 +73,9 @@ namespace Bloxstrap
         {
             string handlerArgs = $"\"{handler}\" %1";
             
-            using RegistryKey uriKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{key}");
-            using RegistryKey uriIconKey = uriKey.CreateSubKey("DefaultIcon");
-            using RegistryKey uriCommandKey = uriKey.CreateSubKey(@"shell\open\command");
+            using var uriKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{key}");
+            using var uriIconKey = uriKey.CreateSubKey("DefaultIcon");
+            using var uriCommandKey = uriKey.CreateSubKey(@"shell\open\command");
 
             if (uriKey.GetValue("") is null)
             {

@@ -11,6 +11,7 @@ using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 using Bloxstrap.Integrations;
+using Bloxstrap.Resources;
 
 namespace Bloxstrap.UI.Elements.ContextMenu
 {
@@ -38,10 +39,6 @@ namespace Bloxstrap.UI.Elements.ContextMenu
 
             if (_activityWatcher is not null)
             {
-#if DEBUG
-                LogTracerMenuItem.Visibility = Visibility.Visible;
-#endif
-
                 _activityWatcher.OnGameJoin += ActivityWatcher_OnGameJoin;
                 _activityWatcher.OnGameLeave += ActivityWatcher_OnGameLeave;
             }
@@ -112,13 +109,21 @@ namespace Bloxstrap.UI.Elements.ContextMenu
 
         private void LogTracerMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            Utilities.ShellExecute(_activityWatcher?.LogLocation!);
+            string? location = _activityWatcher?.LogLocation;
+
+            if (location is null)
+            {
+                Frontend.ShowMessageBox(Strings.ContextMenu_RobloxNotRunning, MessageBoxImage.Information);
+                return;
+            }
+
+            Utilities.ShellExecute(location);
         }
 
         private void CloseRobloxMenuItem_Click(object sender, RoutedEventArgs e)
         {
             MessageBoxResult result = Frontend.ShowMessageBox(
-                Bloxstrap.Resources.Strings.ContextMenu_CloseRobloxMessage,
+                Strings.ContextMenu_CloseRobloxMessage,
                 MessageBoxImage.Warning,
                 MessageBoxButton.YesNo
             );

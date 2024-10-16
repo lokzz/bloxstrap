@@ -17,6 +17,7 @@
         private const string GameJoiningEntryPattern = @"! Joining game '([0-9a-f\-]{36})' place ([0-9]+) at ([0-9\.]+)";
         private const string GameJoiningUDMUXPattern = @"UDMUX Address = ([0-9\.]+), Port = [0-9]+ \| RCC Server Address = ([0-9\.]+), Port = [0-9]+";
         private const string GameJoinedEntryPattern = @"serverId: ([0-9\.]+)\|[0-9]+";
+        private const string GameMessageEntryPattern = @"\[BloxstrapRPC\] (.*)";
 
         private int _gameClientPid;
         private int _logEntriesRead = 0;
@@ -26,6 +27,7 @@
         public event EventHandler<string>? OnLogEntry;
         public event EventHandler? OnGameJoin;
         public event EventHandler? OnGameLeave;
+        public event EventHandler? OnAppClose;
         public event EventHandler<Message>? OnRPCMessage;
 
         private readonly Dictionary<string, string> GeolocationCache = new();
@@ -112,8 +114,8 @@
             {
                 string? log = await sr.ReadLineAsync();
 
-                if (string.IsNullOrEmpty(log))
-                    logUpdatedEvent.WaitOne(1000);
+                if (log is null)
+                    logUpdatedEvent.WaitOne(250);
                 else
                     ExamineLogEntry(log);
             }
@@ -133,6 +135,9 @@
                 App.Logger.WriteLine(LOG_IDENT, $"Read {_logEntriesRead} log entries");
             else if (_logEntriesRead % 100 == 0)
                 App.Logger.WriteLine(LOG_IDENT, $"Read {_logEntriesRead} log entries");
+
+            if (entry.Contains(GameLeavingEntry))
+                OnAppClose?.Invoke(this, new EventArgs());
 
             if (!ActivityInGame && ActivityPlaceId == 0)
             {
@@ -209,13 +214,7 @@
             }
             else if (ActivityInGame && ActivityPlaceId != 0)
             {
-                if (App.Settings.Prop.UseDisableAppPatch && entry.Contains(GameLeavingEntry))
-                {
-                    App.Logger.WriteLine(LOG_IDENT, "Received desktop app exit, closing Roblox");
-                    using var process = Process.GetProcessById(_gameClientPid);
-                    process.CloseMainWindow();
-                }
-                else if (entry.Contains(GameDisconnectedEntry))
+                if (entry.Contains(GameDisconnectedEntry))
                 {
                     App.Logger.WriteLine(LOG_IDENT, $"Disconnected from Game ({ActivityPlaceId}/{ActivityJobId}/{ActivityMachineAddress})");
 
@@ -241,7 +240,16 @@
                 }
                 else if (entry.Contains(GameMessageEntry))
                 {
-                    string messagePlain = entry.Substring(entry.IndexOf(GameMessageEntry) + GameMessageEntry.Length + 1);
+                    var match = Regex.Match(entry, GameMessageEntryPattern);
+
+                    if (match.Groups.Count != 2)
+                    {
+                        App.Logger.WriteLine(LOG_IDENT, $"Failed to assert format for RPC message entry");
+                        App.Logger.WriteLine(LOG_IDENT, entry);
+                        return;
+                    }
+
+                    string messagePlain = match.Groups[1].Value;
                     Message? message;
 
                     App.Logger.WriteLine(LOG_IDENT, $"Received message: '{messagePlain}'");
