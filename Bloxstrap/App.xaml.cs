@@ -6,6 +6,8 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 
 using Bloxstrap.Models.SettingTasks.Base;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace Bloxstrap
 {
@@ -85,7 +87,7 @@ namespace Bloxstrap
                 Frontend.ShowExceptionDialog(exception);
 
             Terminate(ErrorCode.ERROR_INSTALL_FAILURE);
-#endif
+
         }
 
         private void StartupFinished()
@@ -225,7 +227,7 @@ namespace Bloxstrap
             }
 
             Terminate();
-            }
+            
 
             if (!LaunchSettings.IsUninstall && !LaunchSettings.IsMenuLaunch)
                 NotifyIcon = new();
@@ -248,19 +250,19 @@ namespace Bloxstrap
                 else
                 {
                     bool showAlreadyRunningWarning = Process.GetProcessesByName(ProjectName).Length > 1 && !LaunchSettings.IsQuiet;
-                    Frontend.ShowMenu(showAlreadyRunningWarning);
+                    if (showAlreadyRunningWarning) { Frontend.ShowMessageBox("showAlreadyRunningWarning"); }
                 }
 
                 StartupFinished();
                 return;
             }
 
-            if (!IsFirstRun)
-                ShouldSaveConfigs = true;
+            //if (true)
+                //ShouldSaveConfigs = true;
 
             // start bootstrapper and show the bootstrapper modal if we're not running silently
             Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper");
-            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchArgs, LaunchSettings.RobloxLaunchMode);
+            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchArgs, LaunchSettings.RobloxLaunchMode, installWebView2:false);
             IBootstrapperDialog? dialog = null;
 
             if (!LaunchSettings.IsQuiet)
@@ -277,7 +279,7 @@ namespace Bloxstrap
 
             Mutex? singletonMutex = null;
 
-            if (Settings.Prop.MultiInstanceLaunching && LaunchSettings.RobloxLaunchMode == LaunchMode.Player)
+            if (true && LaunchSettings.RobloxLaunchMode == LaunchMode.Player) // wanted to use Settings.Prop.MultiInstanceLaunching, but hey they just redid the settings page so thats awesome :) (replaced with a true statement)
             {
                 Logger.WriteLine(LOG_IDENT, "Creating singleton mutex");
 
