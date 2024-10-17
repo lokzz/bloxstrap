@@ -1,71 +1,28 @@
 ﻿using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
-
-using Wpf.Ui.Mvvm.Contracts;
 
 using CommunityToolkit.Mvvm.Input;
 
-using Bloxstrap.UI.Elements.Settings.Pages;
 using Bloxstrap.Enums.FlagPresets;
 
 namespace Bloxstrap.UI.ViewModels.Settings
 {
     public class FastFlagsViewModel : NotifyPropertyChangedViewModel
     {
-        private readonly Page _page;
+        private Dictionary<string, object>? _preResetFlags;
 
-        public FastFlagsViewModel(Page page) 
-        { 
-            _page = page;
-        }
+        public event EventHandler? RequestPageReloadEvent;
+        
+        public event EventHandler? OpenFlagEditorEvent;
 
-        private void OpenFastFlagEditor()
-        {
-            if (Window.GetWindow(_page) is INavigationWindow window)
-            {
-                if (App.State.Prop.ShowFFlagEditorWarning)
-                    window.Navigate(typeof(FastFlagEditorWarningPage));
-                else
-                    window.Navigate(typeof(FastFlagEditorPage));
-            }
-        }
+        private void OpenFastFlagEditor() => OpenFlagEditorEvent?.Invoke(this, EventArgs.Empty);
 
         public ICommand OpenFastFlagEditorCommand => new RelayCommand(OpenFastFlagEditor);
-
-#if DEBUG
-        public Visibility ShowDebugFlags => Visibility.Visible;
-#else
-        public Visibility ShowDebugFlags => Visibility.Collapsed;
-#endif
 
         public bool UseFastFlagManager
         {
             get => App.Settings.Prop.UseFastFlagManager;
             set => App.Settings.Prop.UseFastFlagManager = value;
-        }
-
-        public bool HttpRequestLogging
-        {
-            get => App.FastFlags.GetPreset("HTTP.Log") is not null;
-            set => App.FastFlags.SetPreset("HTTP.Log", value ? 12 : null);
-        }
-
-        public string HttpRequestProxy
-        {
-            get => App.FastFlags.GetPreset("HTTP.Proxy.Address.1") ?? "";
-
-            set
-            {
-                App.FastFlags.SetPreset("HTTP.Proxy.Enable", String.IsNullOrEmpty(value) ? null : true);
-                App.FastFlags.SetPreset("HTTP.Proxy.Address", String.IsNullOrEmpty(value) ? null : value);
-            }
-        }
-
-        public string StateOverlayFlags
-        {
-            get => App.FastFlags.GetPreset("UI.FlagState") ?? "";
-            set => App.FastFlags.SetPreset("UI.FlagState", String.IsNullOrEmpty(value) ? null : value);
         }
 
         public int FramerateLimit
@@ -87,23 +44,13 @@ namespace Bloxstrap.UI.ViewModels.Settings
         public RenderingMode SelectedRenderingMode
         {
             get => App.FastFlags.GetPresetEnum(RenderingModes, "Rendering.Mode", "True");
-            set
-            {
-                App.FastFlags.SetPresetEnum("Rendering.Mode", RenderingModes[value], "True");
-                App.FastFlags.CheckManualFullscreenPreset();
-            }
+            set => App.FastFlags.SetPresetEnum("Rendering.Mode", RenderingModes[value], "True");
         }
 
         public bool FixDisplayScaling
         {
             get => App.FastFlags.GetPreset("Rendering.DisableScaling") == "True";
             set => App.FastFlags.SetPreset("Rendering.DisableScaling", value ? "True" : null);
-        }
-
-        public bool AlternateGraphicsSelectorEnabled
-        {
-            get => App.FastFlags.GetPreset("UI.Menu.GraphicsSlider") == "True";
-            set => App.FastFlags.SetPreset("UI.Menu.GraphicsSlider", value ? "True" : null);
         }
 
         public IReadOnlyDictionary<InGameMenuVersion, Dictionary<string, string?>> IGMenuVersions => FastFlagManager.IGMenuVersions;
@@ -201,6 +148,28 @@ namespace Bloxstrap.UI.ViewModels.Settings
         {
             get => App.FastFlags.GetPreset("Rendering.TerrainTextureQuality") == "0";
             set => App.FastFlags.SetPreset("Rendering.TerrainTextureQuality", value ? "0" : null);
+        }
+
+
+        public bool ResetConfiguration
+        {
+            get => _preResetFlags is not null;
+
+            set
+            {
+                if (value)
+                {
+                    _preResetFlags = new(App.FastFlags.Prop);
+                    App.FastFlags.Prop.Clear();
+                }
+                else
+                {
+                    App.FastFlags.Prop = _preResetFlags!;
+                    _preResetFlags = null;
+                }
+
+                RequestPageReloadEvent?.Invoke(this, EventArgs.Empty);
+            }
         }
     }
 }

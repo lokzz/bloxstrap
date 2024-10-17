@@ -4,8 +4,6 @@ using System.Windows;
 using System.Windows.Threading;
 
 using Microsoft.Win32;
-
-using Bloxstrap.Models.SettingTasks.Base;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 
@@ -16,8 +14,16 @@ namespace Bloxstrap
     /// </summary>
     public partial class App : Application
     {
+#if QA_BUILD
+        public const string ProjectName = "Bloxstrap-QA";
+#else
         public const string ProjectName = "Bloxstrap";
-        public const string ProjectRepository = "pizzaboxer/bloxstrap";
+#endif
+        public const string ProjectOwner = "Bloxstrap";
+        public const string ProjectRepository = "bloxstraplabs/bloxstrap";
+        public const string ProjectDownloadLink = "https://bloxstraplabs.com";
+        public const string ProjectHelpLink = "https://github.com/bloxstraplabs/bloxstrap/wiki";
+        public const string ProjectSupportLink = "https://github.com/bloxstraplabs/bloxstrap/issues/new";
 
         public const string RobloxPlayerAppName = "RobloxPlayerBeta";
         public const string RobloxStudioAppName = "RobloxStudioBeta";
@@ -31,9 +37,11 @@ namespace Bloxstrap
 
         public static string Version = Assembly.GetExecutingAssembly().GetName().Version!.ToString()[..^2];
 
-        public static readonly MD5 MD5Provider = MD5.Create();
+        public static bool IsActionBuild => !String.IsNullOrEmpty(BuildMetadata.CommitRef);
 
-        public static NotifyIconWrapper? NotifyIcon { get; set; }
+        public static bool IsProductionBuild => IsActionBuild && BuildMetadata.CommitRef.StartsWith("tag", StringComparison.Ordinal);
+
+        public static readonly MD5 MD5Provider = MD5.Create();
 
         public static readonly Logger Logger = new();
 
@@ -52,16 +60,23 @@ namespace Bloxstrap
         );
 
         private static bool _showingExceptionDialog = false;
-
+        
         public static void Terminate(ErrorCode exitCode = ErrorCode.ERROR_SUCCESS)
         {
             int exitCodeNum = (int)exitCode;
 
             Logger.WriteLine("App::Terminate", $"Terminating with exit code {exitCodeNum} ({exitCode})");
 
-            NotifyIcon?.Dispose();
-
             Environment.Exit(exitCodeNum);
+        }
+
+        public static void SoftTerminate(ErrorCode exitCode = ErrorCode.ERROR_SUCCESS)
+        {
+            int exitCodeNum = (int)exitCode;
+
+            Logger.WriteLine("App::SoftTerminate", $"Terminating with exit code {exitCodeNum} ({exitCode})");
+
+            Current.Dispatcher.Invoke(() => Current.Shutdown(exitCodeNum));
         }
 
         void GlobalExceptionHandler(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -73,18 +88,25 @@ namespace Bloxstrap
             FinalizeExceptionHandling(e.Exception);
         }
 
-        public static void FinalizeExceptionHandling(Exception exception, bool log = true)
+        public static void FinalizeExceptionHandling(AggregateException ex)
+        {
+            foreach (var innerEx in ex.InnerExceptions)
+                Logger.WriteException("App::FinalizeExceptionHandling", innerEx);
+
+            FinalizeExceptionHandling(ex.GetBaseException(), false);
+        }
+
+        public static void FinalizeExceptionHandling(Exception ex, bool log = true)
         {
             if (log)
-                Logger.WriteException("App::FinalizeExceptionHandling", exception);
+                Logger.WriteException("App::FinalizeExceptionHandling", ex);
 
             if (_showingExceptionDialog)
                 return;
 
             _showingExceptionDialog = true;
 
-            if (!LaunchSettings.IsQuiet)
-                Frontend.ShowExceptionDialog(exception);
+            Frontend.ShowExceptionDialog(ex);
 
             Terminate(ErrorCode.ERROR_INSTALL_FAILURE);
 
@@ -109,19 +131,38 @@ namespace Bloxstrap
 
             Logger.WriteLine(LOG_IDENT, $"Starting {ProjectName} v{Version}");
 
-            if (String.IsNullOrEmpty(BuildMetadata.CommitHash))
-                Logger.WriteLine(LOG_IDENT, $"Compiled {BuildMetadata.Timestamp.ToFriendlyString()} from {BuildMetadata.Machine}");
-            else
+            string userAgent = $"{ProjectName}/{Version}";
+
+            if (IsActionBuild)
+            {
                 Logger.WriteLine(LOG_IDENT, $"Compiled {BuildMetadata.Timestamp.ToFriendlyString()} from commit {BuildMetadata.CommitHash} ({BuildMetadata.CommitRef})");
 
+                if (IsProductionBuild)
+                    userAgent += $" (Production)";
+                else
+                    userAgent += $" (Artifact {BuildMetadata.CommitHash}, {BuildMetadata.CommitRef})";
+            }
+            else
+            {
+                Logger.WriteLine(LOG_IDENT, $"Compiled {BuildMetadata.Timestamp.ToFriendlyString()} from {BuildMetadata.Machine}");
+
+#if QA_BUILD
+                userAgent += " (QA)";
+#else
+                userAgent += $" (Build {Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildMetadata.Machine))})";
+#endif
+            }
+
             Logger.WriteLine(LOG_IDENT, $"Loaded from {Paths.Process}");
+            Logger.WriteLine(LOG_IDENT, $"Temp path is {Paths.Temp}");
+            Logger.WriteLine(LOG_IDENT, $"WindowsStartMenu path is {Paths.WindowsStartMenu}");
 
             // To customize application configuration such as set high DPI settings or default font,
             // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
 
             HttpClient.Timeout = TimeSpan.FromSeconds(30);
-            HttpClient.DefaultRequestHeaders.Add("User-Agent", ProjectRepository);
+            HttpClient.DefaultRequestHeaders.Add("User-Agent", userAgent);
 
             LaunchSettings = new LaunchSettings(e.Args);
 
@@ -168,6 +209,26 @@ namespace Bloxstrap
                 }
             }
 
+            if (fixInstallLocation && installLocation is not null)
+            {
+                var installer = new Installer
+                {
+                    InstallLocation = installLocation,
+                    IsImplicitInstall = true
+                };
+
+                if (installer.CheckInstallLocation())
+                {
+                    Logger.WriteLine(LOG_IDENT, $"Changing install location to '{installLocation}'");
+                    installer.DoInstall();
+                }
+                else
+                {
+                    // force reinstall
+                    installLocation = null;
+                }
+            }
+
             if (installLocation is null)
             {
                 Logger.Initialize(true);
@@ -175,28 +236,13 @@ namespace Bloxstrap
             }
             else
             {
-                if (fixInstallLocation)
-                {
-                    var installer = new Installer
-                    {
-                        InstallLocation = installLocation,
-                        IsImplicitInstall = true
-                    };
-
-                    if (installer.CheckInstallLocation())
-                    {
-                        Logger.WriteLine(LOG_IDENT, $"Changing install location to '{installLocation}'");
-                        installer.DoInstall();
-                    }
-                }
-
                 Paths.Initialize(installLocation);
 
                 // ensure executable is in the install directory
                 if (Paths.Process != Paths.Application && !File.Exists(Paths.Application))
                     File.Copy(Paths.Process, Paths.Application);
 
-                Logger.Initialize(LaunchSettings.IsUninstall);
+                Logger.Initialize(LaunchSettings.UninstallFlag.Active);
 
                 if (!Logger.Initialized && !Logger.NoWriteMode)
                 {
@@ -208,10 +254,6 @@ namespace Bloxstrap
                 State.Load();
                 FastFlags.Load();
 
-                // we can only parse them now as settings need
-                // to be loaded first to know what our channel is
-                LaunchSettings.ParseRoblox();
-
                 if (!Locale.SupportedLocales.ContainsKey(Settings.Prop.Locale))
                 {
                     Settings.Prop.Locale = "nil";
@@ -220,13 +262,13 @@ namespace Bloxstrap
 
                 Locale.Set(Settings.Prop.Locale);
 
-                if (!LaunchSettings.IsUninstall)
+                if (!LaunchSettings.BypassUpdateCheck)
                     Installer.HandleUpgrade();
 
                 LaunchHandler.ProcessLaunchArgs();
             }
 
-            Terminate();
+            // you must *explicitly* call terminate when everything is done, it won't be called implicitly
             
 
             if (!LaunchSettings.IsUninstall && !LaunchSettings.IsMenuLaunch)

@@ -29,13 +29,19 @@ namespace Bloxstrap.Models.SettingTasks.Base
 
             set
             {
-                App.PendingSettingTasks[Name] = this;
                 _newState = value;
+                
+                if (Changed)
+                    App.PendingSettingTasks[Name] = this;
+                else
+                    App.PendingSettingTasks.Remove(Name);
             }
         }
 
-        public override bool Changed => NewState != OriginalState;
+        public override bool Changed => _newState != OriginalState;
 
         public BoolBaseTask(string prefix, string name) : base(prefix, name) { }
+
+        public BoolBaseTask(string name) : base(name) { }
     }
 }
