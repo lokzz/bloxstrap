@@ -300,8 +300,8 @@ namespace Bloxstrap
 
             // you must *explicitly* call terminate when everything is done, it won't be called implicitly
 
-            if (!LaunchSettings.UninstallFlag.Active && !LaunchSettings.MenuFlag.Active)
-                // NotifyIcon = new();
+            // if (!LaunchSettings.UninstallFlag.Active && !LaunchSettings.MenuFlag.Active)
+            //     notifyIcon = new()
 
 /* #if !DEBUG // no idea what this did or does but bad
             if (!LaunchSettings.UninstallFlag.Active && !IsFirstRun)
@@ -331,8 +331,11 @@ namespace Bloxstrap
             //if (true)
                 //ShouldSaveConfigs = true;
 
+
+            LaunchHandler.ProcessLaunchArgs();
+
             // start bootstrapper and show the bootstrapper modal if we're not running silently
-            Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper");
+            /* Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper"); // removed: depreceated STOP CHANGING SHIT
             Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchMode); // LaunchSettings.RobloxLaunchArgs was removed here :/
             IBootstrapperDialog? dialog = null;
 
@@ -342,7 +345,7 @@ namespace Bloxstrap
                 dialog = Settings.Prop.BootstrapperStyle.GetNew();
                 bootstrapper.Dialog = dialog;
                 dialog.Bootstrapper = bootstrapper;
-            }
+            } */
 
             // handle roblox singleton mutex for multi-instance launching
             // note we're handling it here in the main thread and NOT in the
@@ -366,7 +369,8 @@ namespace Bloxstrap
                 }
             }
 
-            Task bootstrapperTask = Task.Run(async () => await bootstrapper.Run()).ContinueWith(t =>
+
+            /* Task bootstrapperTask = Task.Run(async () => await bootstrapper.Run()).ContinueWith(t =>
             {
                 Logger.WriteLine(LOG_IDENT, "Bootstrapper task has finished");
 
@@ -389,17 +393,17 @@ namespace Bloxstrap
 #endif
 
                 FinalizeExceptionHandling(exception, false);
-            });
+            }); */ // commented: this is done somewhere else apparently
 
             // this ordering is very important as all wpf windows are shown as modal dialogs, mess it up and you'll end up blocking input to one of them
-            dialog?.ShowBootstrapper();
+            // dialog?.ShowBootstrapper();
 
             // if (!LaunchSettings.NoLaunchFlag.Active && Settings.Prop.EnableActivityTracking)
-            //     NotifyIcon?.InitializeContextMenu();
+            //     notifyIcon?.InitializeContextMenu();
 
-            Logger.WriteLine(LOG_IDENT, "Waiting for bootstrapper task to finish");
+            // Logger.WriteLine(LOG_IDENT, "Waiting for bootstrapper task to finish");
 
-            bootstrapperTask.Wait();
+            // bootstrapperTask.Wait();
 
             if (singletonMutex is not null)
             {
