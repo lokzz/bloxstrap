@@ -5,6 +5,7 @@ using Microsoft.Win32;
 
 using Bloxstrap.Integrations;
 using Bloxstrap.Resources;
+using System.Runtime.Intrinsics;
 
 namespace Bloxstrap
 {

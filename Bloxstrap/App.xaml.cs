@@ -99,7 +99,7 @@ namespace Bloxstrap
             Terminate();
         }
 
-        protected override async void OnStartup(StartupEventArgs e)
+        protected override void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
 
@@ -129,7 +129,7 @@ namespace Bloxstrap
             using var uninstallKey = Registry.CurrentUser.OpenSubKey(UninstallKey);
             string? installLocation = null;
             bool fixInstallLocation = false;
-            
+
             if (uninstallKey?.GetValue("InstallLocation") is string value)
             {
                 if (Directory.Exists(value))
@@ -226,16 +226,16 @@ namespace Bloxstrap
                 LaunchHandler.ProcessLaunchArgs();
             }
 
-            Terminate();
-            
+            // Terminate();
+
 
             if (!LaunchSettings.IsUninstall && !LaunchSettings.IsMenuLaunch)
                 NotifyIcon = new();
 
-#if !DEBUG
-            if (!LaunchSettings.IsUninstall && !IsFirstRun)
-                InstallChecker.CheckUpgrade();
-#endif
+            /* #if !DEBUG
+                        if (!LaunchSettings.IsUninstall && !IsFirstRun)
+                            InstallChecker.CheckUpgrade();
+            #endif */
 
             if (LaunchSettings.IsMenuLaunch)
             {
@@ -258,11 +258,11 @@ namespace Bloxstrap
             }
 
             //if (true)
-                //ShouldSaveConfigs = true;
+            //ShouldSaveConfigs = true;
 
             // start bootstrapper and show the bootstrapper modal if we're not running silently
             Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper");
-            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchArgs, LaunchSettings.RobloxLaunchMode, installWebView2:false);
+            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchArgs, LaunchSettings.RobloxLaunchMode, installWebView2: false);
             IBootstrapperDialog? dialog = null;
 
             if (!LaunchSettings.IsQuiet)

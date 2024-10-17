@@ -24,6 +24,7 @@ namespace Bloxstrap
         private static IReadOnlyDictionary<string, string> _common = new Dictionary<string, string>()
         {
             { "Libraries.zip",                 @"" },
+            { "redist.zip",                    @"" },
             { "shaders.zip",                   @"shaders\" },
             { "ssl.zip",                       @"ssl\" },
 
@@ -58,18 +59,22 @@ namespace Bloxstrap
         private static IReadOnlyDictionary<string, string> _studioOnly = new Dictionary<string, string>()
         {
             { "RobloxStudio.zip",                @"" },
-            { "ApplicationConfig.zip",           @"ApplicationConfig\" },
+            { "LibrariesQt5.zip",                @"" },
+
             { "content-studio_svg_textures.zip", @"content\studio_svg_textures\"},
             { "content-qt_translations.zip",     @"content\qt_translations\" },
             { "content-api-docs.zip",            @"content\api_docs\" },
+
             { "extracontent-scripts.zip",        @"ExtraContent\scripts\" },
+
             { "BuiltInPlugins.zip",              @"BuiltInPlugins\" },
             { "BuiltInStandalonePlugins.zip",    @"BuiltInStandalonePlugins\" },
-            { "LibrariesQt5.zip",                @"" },
+
+            { "ApplicationConfig.zip",           @"ApplicationConfig\" },
             { "Plugins.zip",                     @"Plugins\" },
             { "Qml.zip",                         @"Qml\" },
             { "StudioFonts.zip",                 @"StudioFonts\" },
-            { "redist.zip",                      @"" },
+            { "RibbonConfig.zip",                @"RibbonConfig\" }
         };
 
         private static Dictionary<string, string> CombineDictionaries(IReadOnlyDictionary<string, string> d1, IReadOnlyDictionary<string, string> d2)
