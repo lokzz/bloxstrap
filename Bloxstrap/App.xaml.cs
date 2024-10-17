@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -61,6 +62,35 @@ namespace Bloxstrap
 
         private static bool _showingExceptionDialog = false;
         
+        public static async Task<GithubRelease?> GetLatestRelease()
+        {
+            const string LOG_IDENT = "App::GetLatestRelease";
+
+            try
+            {
+                var releaseInfo = await Http.GetJson<GithubRelease>($"https://api.github.com/repos/{ProjectRepository}/releases/latest");
+
+                if (releaseInfo is null || releaseInfo.Assets is null)
+                {
+                    Logger.WriteLine(LOG_IDENT, "Encountered invalid data");
+                    return null;
+                }
+
+                return releaseInfo;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteException(LOG_IDENT, ex);
+            }
+
+            return null;
+        }
+
+        public static void SendStat(Object unused1, Object unused2)
+        {
+            // This function intentionally left blank
+        }
+
         public static void Terminate(ErrorCode exitCode = ErrorCode.ERROR_SUCCESS)
         {
             int exitCodeNum = (int)exitCode;
@@ -121,7 +151,7 @@ namespace Bloxstrap
             Terminate();
         }
 
-        protected override async void OnStartup(StartupEventArgs e)
+        protected override void OnStartup(StartupEventArgs e)
         {
             const string LOG_IDENT = "App::OnStartup";
 
@@ -269,17 +299,16 @@ namespace Bloxstrap
             }
 
             // you must *explicitly* call terminate when everything is done, it won't be called implicitly
-            
 
-            if (!LaunchSettings.IsUninstall && !LaunchSettings.IsMenuLaunch)
-                NotifyIcon = new();
+            if (!LaunchSettings.UninstallFlag.Active && !LaunchSettings.MenuFlag.Active)
+                // NotifyIcon = new();
 
-#if !DEBUG
-            if (!LaunchSettings.IsUninstall && !IsFirstRun)
+/* #if !DEBUG // no idea what this did or does but bad
+            if (!LaunchSettings.UninstallFlag.Active && !IsFirstRun)
                 InstallChecker.CheckUpgrade();
-#endif
+#endif */
 
-            if (LaunchSettings.IsMenuLaunch)
+            if (LaunchSettings.MenuFlag.Active)
             {
                 Process? menuProcess = Utilities.GetProcessesSafe().Where(x => x.MainWindowTitle == $"{ProjectName} Menu").FirstOrDefault();
 
@@ -291,7 +320,7 @@ namespace Bloxstrap
                 }
                 else
                 {
-                    bool showAlreadyRunningWarning = Process.GetProcessesByName(ProjectName).Length > 1 && !LaunchSettings.IsQuiet;
+                    bool showAlreadyRunningWarning = Process.GetProcessesByName(ProjectName).Length > 1 && !LaunchSettings.QuietFlag.Active;
                     if (showAlreadyRunningWarning) { Frontend.ShowMessageBox("showAlreadyRunningWarning"); }
                 }
 
@@ -304,10 +333,10 @@ namespace Bloxstrap
 
             // start bootstrapper and show the bootstrapper modal if we're not running silently
             Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper");
-            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchArgs, LaunchSettings.RobloxLaunchMode, installWebView2:false);
+            Bootstrapper bootstrapper = new(LaunchSettings.RobloxLaunchMode); // LaunchSettings.RobloxLaunchArgs was removed here :/
             IBootstrapperDialog? dialog = null;
 
-            if (!LaunchSettings.IsQuiet)
+            if (!LaunchSettings.QuietFlag.Active)
             {
                 Logger.WriteLine(LOG_IDENT, "Initializing bootstrapper dialog");
                 dialog = Settings.Prop.BootstrapperStyle.GetNew();
@@ -341,8 +370,8 @@ namespace Bloxstrap
             {
                 Logger.WriteLine(LOG_IDENT, "Bootstrapper task has finished");
 
-                // notifyicon is blocking main thread, must be disposed here
-                NotifyIcon?.Dispose();
+                // notifyicon is blocking main thread, must be disposed here // now depreaceded
+                // NotifyIcon?.Dispose();
 
                 if (t.IsFaulted)
                     Logger.WriteLine(LOG_IDENT, "An exception occurred when running the bootstrapper");
@@ -365,8 +394,8 @@ namespace Bloxstrap
             // this ordering is very important as all wpf windows are shown as modal dialogs, mess it up and you'll end up blocking input to one of them
             dialog?.ShowBootstrapper();
 
-            if (!LaunchSettings.IsNoLaunch && Settings.Prop.EnableActivityTracking)
-                NotifyIcon?.InitializeContextMenu();
+            // if (!LaunchSettings.NoLaunchFlag.Active && Settings.Prop.EnableActivityTracking)
+            //     NotifyIcon?.InitializeContextMenu();
 
             Logger.WriteLine(LOG_IDENT, "Waiting for bootstrapper task to finish");
 
