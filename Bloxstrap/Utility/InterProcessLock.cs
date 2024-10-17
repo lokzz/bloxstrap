@@ -12,10 +12,20 @@ namespace Bloxstrap.Utility
 
         public bool IsAcquired { get; private set; }
 
+        public InterProcessLock(string name) : this(name, TimeSpan.Zero) { }
+
         public InterProcessLock(string name, TimeSpan timeout)
         {
             Mutex = new Mutex(false, "Bloxstrap-" + name);
-            IsAcquired = Mutex.WaitOne(timeout);
+
+            try
+            {
+                IsAcquired = Mutex.WaitOne(timeout);
+            }
+            catch (AbandonedMutexException)
+            {
+                IsAcquired = true;
+            }
         }
 
         public void Dispose()
@@ -25,6 +35,8 @@ namespace Bloxstrap.Utility
                 Mutex.ReleaseMutex();
                 IsAcquired = false;
             }
+
+            GC.SuppressFinalize(this);
         }
     }
 }

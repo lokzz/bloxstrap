@@ -2,9 +2,6 @@
 
 using Bloxstrap.UI.Elements.Bootstrapper;
 using Bloxstrap.UI.Elements.Dialogs;
-using Bloxstrap.UI.Elements.Settings;
-using Bloxstrap.UI.Elements.Installer;
-using System.Drawing;
 
 namespace Bloxstrap.UI
 {
@@ -14,38 +11,46 @@ namespace Bloxstrap.UI
         {
             App.Logger.WriteLine("Frontend::ShowMessageBox", message);
 
-            if (App.LaunchSettings.IsQuiet)
+            if (App.LaunchSettings.QuietFlag.Active)
                 return defaultResult;
 
-            if (!App.LaunchSettings.IsRobloxLaunch)
-                return ShowFluentMessageBox(message, icon, buttons);
+            return ShowFluentMessageBox(message, icon, buttons);
+        }
 
-            switch (App.Settings.Prop.BootstrapperStyle)
-            {
-                case BootstrapperStyle.FluentDialog:
-                case BootstrapperStyle.ClassicFluentDialog:
-                case BootstrapperStyle.FluentAeroDialog:
-                case BootstrapperStyle.ByfronDialog:
-                    return ShowFluentMessageBox(message, icon, buttons);
+        public static void ShowPlayerErrorDialog(bool crash = false)
+        {
+            if (App.LaunchSettings.QuietFlag.Active)
+                return;
 
-                default:
-                    return MessageBox.Show(message, App.ProjectName, buttons, icon);
-            }
+            string topLine = Strings.Dialog_PlayerError_FailedLaunch;
+
+            if (crash)
+                topLine = Strings.Dialog_PlayerError_Crash;
+
+            ShowMessageBox($"{topLine}\n\n{Strings.Dialog_PlayerError_HelpInformation}", MessageBoxImage.Error);
+
+            Utilities.ShellExecute($"https://github.com/{App.ProjectRepository}/wiki/Roblox-crashes-or-does-not-launch");
         }
 
         public static void ShowExceptionDialog(Exception exception)
         {
+            if (App.LaunchSettings.QuietFlag.Active)
+                return;
+
             Application.Current.Dispatcher.Invoke(() =>
             {
                 new ExceptionDialog(exception).ShowDialog();
             });
         }
 
-        public static void ShowConnectivityDialog(string title, string description, Exception exception)
+        public static void ShowConnectivityDialog(string title, string description, MessageBoxImage image, Exception exception)
         {
+            if (App.LaunchSettings.QuietFlag.Active)
+                return;
+
             Application.Current.Dispatcher.Invoke(() =>
             {
-                new ConnectivityDialog(title, description, exception).ShowDialog();
+                new ConnectivityDialog(title, description, image, exception).ShowDialog();
             });
         }
 

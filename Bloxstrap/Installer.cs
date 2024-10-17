@@ -1,24 +1,23 @@
-﻿using System.DirectoryServices;
-using System.Reflection;
-using System.Reflection.Metadata.Ecma335;
-using System.Windows;
-using System.Windows.Media.Animation;
-using Bloxstrap.Resources;
+﻿using System.Windows;
 using Microsoft.Win32;
 
 namespace Bloxstrap
 {
     internal class Installer
     {
-        private static string DesktopShortcut => Path.Combine(Paths.Desktop, "Bloxstrap.lnk");
+        private static string DesktopShortcut => Path.Combine(Paths.Desktop, $"{App.ProjectName}.lnk");
 
-        private static string StartMenuShortcut => Path.Combine(Paths.WindowsStartMenu, "Bloxstrap.lnk");
+        private static string StartMenuShortcut => Path.Combine(Paths.WindowsStartMenu, $"{App.ProjectName}.lnk");
 
-        public string InstallLocation = Path.Combine(Paths.LocalAppData, "Bloxstrap");
+        public string InstallLocation = Path.Combine(Paths.LocalAppData, App.ProjectName);
+
+        public bool ExistingDataPresent => File.Exists(Path.Combine(InstallLocation, "Settings.json"));
 
         public bool CreateDesktopShortcuts = true;
 
         public bool CreateStartMenuShortcuts = true;
+
+        public bool EnableAnalytics = true;
 
         public bool IsImplicitInstall = false;
 
@@ -26,6 +25,10 @@ namespace Bloxstrap
 
         public void DoInstall()
         {
+            const string LOG_IDENT = "Installer::DoInstall";
+
+            App.Logger.WriteLine(LOG_IDENT, "Beginning installation");
+
             // should've been created earlier from the write test anyway
             Directory.CreateDirectory(InstallLocation);
 
@@ -34,37 +37,46 @@ namespace Bloxstrap
             if (!IsImplicitInstall)
             {
                 Filesystem.AssertReadOnly(Paths.Application);
-                File.Copy(Paths.Process, Paths.Application, true);
+
+                try
+                {
+                    File.Copy(Paths.Process, Paths.Application, true);
+                }
+                catch (Exception ex)
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Could not overwrite executable");
+                    App.Logger.WriteException(LOG_IDENT, ex);
+
+                    Frontend.ShowMessageBox(Strings.Installer_Install_CannotOverwrite, MessageBoxImage.Error);
+                    App.Terminate(ErrorCode.ERROR_INSTALL_FAILURE);
+                }
             }
 
-            // TODO: registry access checks, i'll need to look back on issues to see what the error looks like
             using (var uninstallKey = Registry.CurrentUser.CreateSubKey(App.UninstallKey))
             {
-                uninstallKey.SetValue("DisplayIcon", $"{Paths.Application},0");
-                uninstallKey.SetValue("DisplayName", App.ProjectName);
+                uninstallKey.SetValueSafe("DisplayIcon", $"{Paths.Application},0");
+                uninstallKey.SetValueSafe("DisplayName", App.ProjectName);
 
-                uninstallKey.SetValue("DisplayVersion", App.Version);
+                uninstallKey.SetValueSafe("DisplayVersion", App.Version);
 
                 if (uninstallKey.GetValue("InstallDate") is null)
-                    uninstallKey.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
+                    uninstallKey.SetValueSafe("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
 
-                uninstallKey.SetValue("InstallLocation", Paths.Base);
-                uninstallKey.SetValue("NoRepair", 1);
-                uninstallKey.SetValue("Publisher", "pizzaboxer");
-                uninstallKey.SetValue("ModifyPath", $"\"{Paths.Application}\" -settings");
-                uninstallKey.SetValue("QuietUninstallString", $"\"{Paths.Application}\" -uninstall -quiet");
-                uninstallKey.SetValue("UninstallString", $"\"{Paths.Application}\" -uninstall");
-                uninstallKey.SetValue("URLInfoAbout", $"https://github.com/{App.ProjectRepository}");
-                uninstallKey.SetValue("URLUpdateInfo", $"https://github.com/{App.ProjectRepository}/releases/latest");
+                uninstallKey.SetValueSafe("InstallLocation", Paths.Base);
+                uninstallKey.SetValueSafe("NoRepair", 1);
+                uninstallKey.SetValueSafe("Publisher", App.ProjectOwner);
+                uninstallKey.SetValueSafe("ModifyPath", $"\"{Paths.Application}\" -settings");
+                uninstallKey.SetValueSafe("QuietUninstallString", $"\"{Paths.Application}\" -uninstall -quiet");
+                uninstallKey.SetValueSafe("UninstallString", $"\"{Paths.Application}\" -uninstall");
+                uninstallKey.SetValueSafe("HelpLink", App.ProjectHelpLink);
+                uninstallKey.SetValueSafe("URLInfoAbout", App.ProjectSupportLink);
+                uninstallKey.SetValueSafe("URLUpdateInfo", App.ProjectDownloadLink);
             }
 
             // only register player, for the scenario where the user installs bloxstrap, closes it,
             // and then launches from the website expecting it to work
             // studio can be implicitly registered when it's first launched manually
-            ProtocolHandler.Register("roblox", "Roblox", Paths.Application);
-            ProtocolHandler.Register("roblox-player", "Roblox", Paths.Application);
-
-            // TODO: implicit installation needs to reregister studio
+            WindowsRegistry.RegisterPlayer();
 
             if (CreateDesktopShortcuts)
                 Shortcut.Create(Paths.Application, "", DesktopShortcut);
@@ -73,9 +85,21 @@ namespace Bloxstrap
                 Shortcut.Create(Paths.Application, "", StartMenuShortcut);
 
             // existing configuration persisting from an earlier install
-            App.Settings.Load();
-            App.State.Load();
-            App.FastFlags.Load();
+            App.Settings.Load(false);
+            App.State.Load(false);
+            App.FastFlags.Load(false);
+
+            App.Settings.Prop.EnableAnalytics = EnableAnalytics;
+
+            if (!String.IsNullOrEmpty(App.State.Prop.Studio.VersionGuid))
+                WindowsRegistry.RegisterStudio();
+
+            App.Settings.Save();
+
+            App.Logger.WriteLine(LOG_IDENT, "Installation finished");
+
+            if (!IsImplicitInstall)
+                App.SendStat("installAction", "install");
         }
 
         private bool ValidateLocation()
@@ -86,6 +110,10 @@ namespace Bloxstrap
 
             // unc path, just to be safe
             if (InstallLocation.StartsWith("\\\\"))
+                return false;
+
+            if (InstallLocation.StartsWith(Path.GetTempPath(), StringComparison.InvariantCultureIgnoreCase)
+                || InstallLocation.Contains("\\Temp\\", StringComparison.InvariantCultureIgnoreCase))
                 return false;
 
             // prevent from installing to a onedrive folder
@@ -158,25 +186,27 @@ namespace Bloxstrap
             const string LOG_IDENT = "Installer::DoUninstall";
 
             var processes = new List<Process>();
-            processes.AddRange(Process.GetProcessesByName(App.RobloxPlayerAppName));
+            
+            if (!String.IsNullOrEmpty(App.State.Prop.Player.VersionGuid))
+                processes.AddRange(Process.GetProcessesByName(App.RobloxPlayerAppName));
 
-#if STUDIO_FEATURES
-            processes.AddRange(Process.GetProcessesByName(App.RobloxStudioAppName));
-#endif
+            if (!String.IsNullOrEmpty(App.State.Prop.Studio.VersionGuid))
+                processes.AddRange(Process.GetProcessesByName(App.RobloxStudioAppName));
 
             // prompt to shutdown roblox if its currently running
             if (processes.Any())
             {
-                if (!App.LaunchSettings.IsQuiet)
-                {
-                    MessageBoxResult result = Frontend.ShowMessageBox(
-                        Strings.Bootstrapper_Uninstall_RobloxRunning,
-                        MessageBoxImage.Information,
-                        MessageBoxButton.OKCancel
-                    );
+                var result = Frontend.ShowMessageBox(
+                    Strings.Bootstrapper_Uninstall_RobloxRunning,
+                    MessageBoxImage.Information,
+                    MessageBoxButton.OKCancel,
+                    MessageBoxResult.OK
+                );
 
-                    if (result != MessageBoxResult.OK)
-                        App.Terminate(ErrorCode.ERROR_CANCELLED);
+                if (result != MessageBoxResult.OK)
+                {
+                    App.Terminate(ErrorCode.ERROR_CANCELLED);
+                    return;
                 }
 
                 try
@@ -205,44 +235,38 @@ namespace Bloxstrap
             {
                 playerStillInstalled = false;
 
-                ProtocolHandler.Unregister("roblox");
-                ProtocolHandler.Unregister("roblox-player");
+                WindowsRegistry.Unregister("roblox");
+                WindowsRegistry.Unregister("roblox-player");
             }
             else
             {
-                // revert launch uri handler to stock bootstrapper
                 string playerPath = Path.Combine((string)playerFolder, "RobloxPlayerBeta.exe");
 
-                ProtocolHandler.Register("roblox", "Roblox", playerPath);
-                ProtocolHandler.Register("roblox-player", "Roblox", playerPath);
+                WindowsRegistry.RegisterPlayer(playerPath, "%1");
             }
 
-            using RegistryKey? studioBootstrapperKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\roblox-studio");
-            if (studioBootstrapperKey is null)
+            using var studioKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\roblox-studio");
+            var studioFolder = studioKey?.GetValue("InstallLocation");
+
+            if (studioKey is null || studioFolder is not string)
             {
                 studioStillInstalled = false;
 
-#if STUDIO_FEATURES
-                ProtocolHandler.Unregister("roblox-studio");
-                ProtocolHandler.Unregister("roblox-studio-auth");
+                WindowsRegistry.Unregister("roblox-studio");
+                WindowsRegistry.Unregister("roblox-studio-auth");
 
-                ProtocolHandler.Unregister("Roblox.Place");
-                ProtocolHandler.Unregister(".rbxl");
-                ProtocolHandler.Unregister(".rbxlx");
-#endif
+                WindowsRegistry.Unregister("Roblox.Place");
+                WindowsRegistry.Unregister(".rbxl");
+                WindowsRegistry.Unregister(".rbxlx");
             }
-#if STUDIO_FEATURES
             else
             {
-                string studioLocation = (string?)studioBootstrapperKey.GetValue("InstallLocation") + "RobloxStudioBeta.exe"; // points to studio exe instead of bootstrapper
-                ProtocolHandler.Register("roblox-studio", "Roblox", studioLocation);
-                ProtocolHandler.Register("roblox-studio-auth", "Roblox", studioLocation);
+                string studioPath = Path.Combine((string)studioFolder, "RobloxStudioBeta.exe");
+                string studioLauncherPath = Path.Combine((string)studioFolder, "RobloxStudioLauncherBeta.exe");
 
-                ProtocolHandler.RegisterRobloxPlace(studioLocation);
+                WindowsRegistry.RegisterStudioProtocol(studioPath, "%1");
+                WindowsRegistry.RegisterStudioFileClass(studioPath, "-ide \"%1\"");
             }
-#endif
-
-
 
             var cleanupSequence = new List<Action>
             {
@@ -259,8 +283,10 @@ namespace Bloxstrap
 
                 () => File.Delete(StartMenuShortcut),
 
-                () => Directory.Delete(Paths.Versions, true),
                 () => Directory.Delete(Paths.Downloads, true),
+                () => Directory.Delete(Paths.Roblox, true),
+
+                () => File.Delete(App.State.FileLocation)
             };
 
             if (!keepData)
@@ -270,18 +296,11 @@ namespace Bloxstrap
                     () => Directory.Delete(Paths.Modifications, true),
                     () => Directory.Delete(Paths.Logs, true),
 
-                    () => File.Delete(App.Settings.FileLocation),
-                    () => File.Delete(App.State.FileLocation), // TODO: maybe this should always be deleted? not sure yet
+                    () => File.Delete(App.Settings.FileLocation)
                 });
             }
 
-            bool deleteFolder = false;
-
-            if (Directory.Exists(Paths.Base))
-            {
-                var folderFiles = Directory.GetFiles(Paths.Base);
-                deleteFolder = folderFiles.Length == 1 && folderFiles.First().EndsWith(".exe", StringComparison.InvariantCultureIgnoreCase);
-            }
+            bool deleteFolder = Directory.GetFiles(Paths.Base).Length <= 3;
 
             if (deleteFolder)
                 cleanupSequence.Add(() => Directory.Delete(Paths.Base, true));
@@ -323,6 +342,8 @@ namespace Bloxstrap
                     WindowStyle = ProcessWindowStyle.Hidden
                 });
             }
+
+            App.SendStat("installAction", "uninstall");
         }
 
         public static void HandleUpgrade()
@@ -333,8 +354,12 @@ namespace Bloxstrap
                 return;
 
             // 2.0.0 downloads updates to <BaseFolder>/Updates so lol
-            // TODO: 2.8.0 will download them to <Temp>/Bloxstrap/Updates
-            bool isAutoUpgrade = Paths.Process.StartsWith(Path.Combine(Paths.Base, "Updates")) || Paths.Process.StartsWith(Path.Combine(Paths.LocalAppData, "Temp"));
+            bool isAutoUpgrade = App.LaunchSettings.UpgradeFlag.Active
+                || Paths.Process.StartsWith(Path.Combine(Paths.Base, "Updates"))
+                || Paths.Process.StartsWith(Path.Combine(Paths.LocalAppData, "Temp"))
+                || Paths.Process.StartsWith(Paths.TempUpdates);
+
+            isAutoUpgrade = true;
 
             var existingVer = FileVersionInfo.GetVersionInfo(Paths.Application).ProductVersion;
             var currentVer = FileVersionInfo.GetVersionInfo(Paths.Process).ProductVersion;
@@ -342,8 +367,20 @@ namespace Bloxstrap
             if (MD5Hash.FromFile(Paths.Process) == MD5Hash.FromFile(Paths.Application))
                 return;
 
+            if (currentVer is not null && existingVer is not null && Utilities.CompareVersions(currentVer, existingVer) == VersionComparison.LessThan)
+            {
+                var result = Frontend.ShowMessageBox(
+                    Strings.InstallChecker_VersionLessThanInstalled,
+                    MessageBoxImage.Question,
+                    MessageBoxButton.YesNo
+                );
+
+                if (result != MessageBoxResult.Yes)
+                    return;
+            }
+
             // silently upgrade version if the command line flag is set or if we're launching from an auto update
-            if (!App.LaunchSettings.IsUpgrade && !isAutoUpgrade)
+            if (!isAutoUpgrade)
             {
                 var result = Frontend.ShowMessageBox(
                     Strings.InstallChecker_VersionDifferentThanInstalled,
@@ -355,47 +392,87 @@ namespace Bloxstrap
                     return;
             }
 
+            App.Logger.WriteLine(LOG_IDENT, "Doing upgrade");
+
             Filesystem.AssertReadOnly(Paths.Application);
 
-            // TODO: make this use a mutex somehow
-            // yes, this is EXTREMELY hacky, but the updater process that launched the
-            // new version may still be open and so we have to wait for it to close
-            int attempts = 0;
-            while (attempts < 10)
+            using (var ipl = new InterProcessLock("AutoUpdater", TimeSpan.FromSeconds(5)))
             {
-                attempts++;
+                if (!ipl.IsAcquired)
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "Failed to update! (Could not obtain singleton mutex)");
+                    return;
+                }
+            }
 
+            // prior to 2.8.0, auto-updating was handled with this... bruteforce method
+            // now it's handled with the system mutex you see above, but we need to keep this logic for <2.8.0 versions
+            for (int i = 1; i <= 10; i++)
+            {
                 try
                 {
-                    File.Delete(Paths.Application);
+                    File.Copy(Paths.Process, Paths.Application, true);
                     break;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    if (attempts == 1)
+                    if (i == 1)
+                    {
                         App.Logger.WriteLine(LOG_IDENT, "Waiting for write permissions to update version");
+                    }
+                    else if (i == 10)
+                    {
+                        App.Logger.WriteLine(LOG_IDENT, "Failed to update! (Could not get write permissions after 10 tries/5 seconds)");
+                        App.Logger.WriteException(LOG_IDENT, ex);
+                        return;
+                    }
 
                     Thread.Sleep(500);
                 }
             }
 
-            if (attempts == 10)
-            {
-                App.Logger.WriteLine(LOG_IDENT, "Failed to update! (Could not get write permissions after 5 seconds)");
-                return;
-            }
-
-            File.Copy(Paths.Process, Paths.Application);
-
             using (var uninstallKey = Registry.CurrentUser.CreateSubKey(App.UninstallKey))
             {
-                uninstallKey.SetValue("DisplayVersion", App.Version);
+                uninstallKey.SetValueSafe("DisplayVersion", App.Version);
+
+                uninstallKey.SetValueSafe("Publisher", App.ProjectOwner);
+                uninstallKey.SetValueSafe("HelpLink", App.ProjectHelpLink);
+                uninstallKey.SetValueSafe("URLInfoAbout", App.ProjectSupportLink);
+                uninstallKey.SetValueSafe("URLUpdateInfo", App.ProjectDownloadLink);
             }
 
             // update migrations
 
             if (existingVer is not null)
             {
+                if (Utilities.CompareVersions(existingVer, "2.2.0") == VersionComparison.LessThan)
+                {
+                    string path = Path.Combine(Paths.Integrations, "rbxfpsunlocker");
+
+                    try
+                    {
+                        if (Directory.Exists(path))
+                            Directory.Delete(path, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        App.Logger.WriteException(LOG_IDENT, ex);
+                    }
+                }
+
+                if (Utilities.CompareVersions(existingVer, "2.3.0") == VersionComparison.LessThan)
+                {
+                    string injectorLocation = Path.Combine(Paths.Modifications, "dxgi.dll");
+                    string configLocation = Path.Combine(Paths.Modifications, "ReShade.ini");
+
+                    if (File.Exists(injectorLocation))
+                        File.Delete(injectorLocation);
+
+                    if (File.Exists(configLocation))
+                        File.Delete(configLocation);
+                }
+
+
                 if (Utilities.CompareVersions(existingVer, "2.5.0") == VersionComparison.LessThan)
                 {
                     App.FastFlags.SetValue("DFFlagDisableDPIScale", null);
@@ -408,6 +485,13 @@ namespace Bloxstrap
 
                     if (App.FastFlags.GetPreset("UI.Menu.Style.DisableV2") is not null)
                         App.FastFlags.SetPreset("UI.Menu.Style.ABTest", false);
+                }
+
+                if (Utilities.CompareVersions(existingVer, "2.5.3") == VersionComparison.LessThan)
+                {
+                    string? val = App.FastFlags.GetPreset("UI.Menu.Style.EnableV4.1");
+                    if (App.FastFlags.GetPreset("UI.Menu.Style.EnableV4.2") != val)
+                        App.FastFlags.SetPreset("UI.Menu.Style.EnableV4.2", val);
                 }
 
                 if (Utilities.CompareVersions(existingVer, "2.6.0") == VersionComparison.LessThan)
@@ -431,18 +515,30 @@ namespace Bloxstrap
 
                     _ = int.TryParse(App.FastFlags.GetPreset("Rendering.Framerate"), out int x);
                     if (x == 0)
-                    {
                         App.FastFlags.SetPreset("Rendering.Framerate", null);
-                    }
                 }
 
                 if (Utilities.CompareVersions(existingVer, "2.8.0") == VersionComparison.LessThan)
                 {
+                    if (isAutoUpgrade)
+                    {
+                        if (App.LaunchSettings.Args.Length == 0)
+                            App.LaunchSettings.RobloxLaunchMode = LaunchMode.Player;
+
+                        string? query = App.LaunchSettings.Args.FirstOrDefault(x => x.Contains("roblox"));
+
+                        if (query is not null)
+                        {
+                            App.LaunchSettings.RobloxLaunchMode = LaunchMode.Player;
+                            App.LaunchSettings.RobloxLaunchArgs = query;
+                        }
+                    }
+
                     string oldDesktopPath = Path.Combine(Paths.Desktop, "Play Roblox.lnk");
                     string oldStartPath = Path.Combine(Paths.WindowsStartMenu, "Bloxstrap");
 
                     if (File.Exists(oldDesktopPath))
-                        File.Move(oldDesktopPath, DesktopShortcut);
+                        File.Move(oldDesktopPath, DesktopShortcut, true);
 
                     if (Directory.Exists(oldStartPath))
                     {
@@ -459,17 +555,57 @@ namespace Bloxstrap
                     }
 
                     Registry.CurrentUser.DeleteSubKeyTree("Software\\Bloxstrap", false);
+
+                    WindowsRegistry.RegisterPlayer();
+
+                    string? oldV2Val = App.FastFlags.GetValue("FFlagDisableNewIGMinDUA");
+
+                    if (oldV2Val is not null)
+                    {
+                        if (oldV2Val == "True")
+                        {
+                            App.FastFlags.SetPreset("UI.Menu.Style.V2Rollout", "0");
+
+                            if (App.FastFlags.GetValue("UI.Menu.Style.EnableV4.1") == "False")
+                                App.FastFlags.SetPreset("UI.Menu.Style.ReportButtonCutOff", "False");
+                        }
+                        else
+                        {
+                            App.FastFlags.SetPreset("UI.Menu.Style.V2Rollout", "100");
+                        }
+
+                        if (App.FastFlags.GetPreset("UI.Menu.Style.ABTest.1") is not null)
+                            App.FastFlags.SetPreset("UI.Menu.Style.ABTest", "False");
+
+                        App.FastFlags.SetValue("FFlagDisableNewIGMinDUA", null);
+                    }
+
+                    App.FastFlags.SetValue("FFlagFixGraphicsQuality", null);
+
+                    try
+                    {
+                        Directory.Delete(Path.Combine(Paths.Base, "Versions"), true);
+                    }
+                    catch (Exception ex)
+                    {
+                        App.Logger.WriteException(LOG_IDENT, ex);
+                    }
                 }
 
                 App.Settings.Save();
                 App.FastFlags.Save();
             }
 
+            if (currentVer is null)
+                return;
+
+            App.SendStat("installAction", "upgrade");
+
             if (isAutoUpgrade)
             {
                 Utilities.ShellExecute($"https://github.com/{App.ProjectRepository}/wiki/Release-notes-for-Bloxstrap-v{currentVer}");
             }
-            else if (!App.LaunchSettings.IsQuiet)
+            else
             {
                 Frontend.ShowMessageBox(
                     string.Format(Strings.InstallChecker_Updated, currentVer),
