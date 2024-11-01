@@ -161,6 +161,24 @@ namespace Bloxstrap
                     installWebView2 = Frontend.ShowMessageBox(Strings.Bootstrapper_WebView2NotFound, MessageBoxImage.Warning, MessageBoxButton.YesNo, MessageBoxResult.Yes) == MessageBoxResult.Yes;
             }
 
+            Mutex? singletonMutex = null;
+
+            if (true) // wanted to use Settings.Prop.MultiInstanceLaunching, but hey they just redid the settings page so thats awesome :) (replaced with a true statement)
+            {
+                App.Logger.WriteLine(LOG_IDENT, "Creating singleton mutex");
+
+                try
+                {
+                    Mutex.OpenExisting("ROBLOX_singletonMutex");
+                    App.Logger.WriteLine(LOG_IDENT, "Warning - singleton mutex already exists!");
+                }
+                catch
+                {
+                    // create the singleton mutex before the game client does
+                    singletonMutex = new Mutex(true, "ROBLOX_singletonMutex");
+                }
+            }
+
             if (App.Settings.Prop.ConfirmLaunches && Mutex.TryOpenExisting("ROBLOX_singletonMutex", out var _))
             {
                 // this currently doesn't work very well since it relies on checking the existence of the singleton mutex
@@ -225,6 +243,16 @@ namespace Bloxstrap
             App.Logger.WriteLine(LOG_IDENT, "Waiting for bootstrapper task to finish");
 
             bootstrapperTask.Wait();
+
+            if (singletonMutex is not null)
+            {
+                App.Logger.WriteLine(LOG_IDENT, "We have singleton mutex ownership! Running in background until all Roblox processes are closed");
+
+                // we've got ownership of the roblox singleton mutex!
+                // if we stop running, everything will screw up once any more roblox instances launched
+                while (Process.GetProcessesByName("RobloxPlayerBeta").Any())
+                    Thread.Sleep(5000);
+            }
         }
     }
 }
