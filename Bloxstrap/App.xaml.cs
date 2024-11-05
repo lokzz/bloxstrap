@@ -223,7 +223,7 @@ namespace Bloxstrap
                 if (!LaunchSettings.IsUninstall)
                     Installer.HandleUpgrade();
 
-                LaunchHandler.ProcessLaunchArgs();
+                //LaunchHandler.ProcessLaunchArgs();
             }
 
             // Terminate();
