@@ -104,7 +104,17 @@ namespace Bloxstrap
 
             ActivityWatcher?.Start();
 
-            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId))
+            App.Logger.WriteLine("Watcher::Mutex", "Creating singleton mutex");
+            Mutex? singletonMutex = null;
+            
+            try {
+                Mutex.OpenExisting("ROBLOX_singletonMutex");
+                App.Logger.WriteLine("Watcher::Mutex", "Mutex exists already");
+            } catch {
+                singletonMutex = new Mutex(true, "ROBLOX_singletonMutex");
+            }
+
+            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId) && singletonMutex != null)
                 await Task.Delay(1000);
 
             if (_watcherData.AutoclosePids is not null)
