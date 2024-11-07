@@ -97,22 +97,12 @@ namespace Bloxstrap
             }
         }
 
-        public async Task Run()
+        public async Task Run(Mutex? singletonMutex)
         {
             if (!_lock.IsAcquired || _watcherData is null)
                 return;
 
             ActivityWatcher?.Start();
-
-            App.Logger.WriteLine("Watcher::Mutex", "Creating singleton mutex");
-            Mutex? singletonMutex = null;
-            
-            try {
-                Mutex.OpenExisting("ROBLOX_singletonMutex");
-                App.Logger.WriteLine("Watcher::Mutex", "Mutex exists already");
-            } catch {
-                singletonMutex = new Mutex(true, "ROBLOX_singletonMutex");
-            }
 
             while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId) && singletonMutex != null)
                 await Task.Delay(1000);
