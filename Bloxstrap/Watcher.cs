@@ -15,9 +15,13 @@ namespace Bloxstrap
 
         public readonly DiscordRichPresence? RichPresence;
 
-        public Watcher()
+        public Mutex? _mutexd = null;
+
+        public Watcher(Mutex? mutexd = null)
         {
             const string LOG_IDENT = "Watcher";
+
+            _mutexd = mutexd;
 
             if (!_lock.IsAcquired)
             {
@@ -97,15 +101,15 @@ namespace Bloxstrap
             }
         }
 
-        public async Task Run(Mutex? singletonMutex)
+        public async Task Run()
         {
             if (!_lock.IsAcquired || _watcherData is null)
                 return;
 
             ActivityWatcher?.Start();
 
-            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId) && singletonMutex != null)
-                await Task.Delay(1000);
+            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId) && _mutexd != null)
+                await Task.Delay(1000); App.Logger.WriteLine("Watcher::Run", "Waiting for Roblox to close (ugh.)");
 
             if (_watcherData.AutoclosePids is not null)
             {

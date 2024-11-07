@@ -244,15 +244,15 @@ namespace Bloxstrap
             //    - discord rich presence tasks: handles querying and displaying of game information, invoked on activity watcher events
             // - watcher task: runs activity watcher + waiting for roblox to close, terminates when it has >> fork: this also handles mutex watching now :v <<
 
-            var watcher = new Watcher();
-
             // i dont line putting it here, but roblox is faster than the watcher task :/
             App.Logger.WriteLine("Watcher::Mutex", "Creating singleton mutex");
             Mutex? mutexd = null;
-            try { Mutex.OpenExisting("ROBLOX_singletonMutex"); App.Logger.WriteLine("Watcher::Mutex", "Mutex already exists"); }
+            try { Mutex.OpenExisting("ROBLOX_singletonMutex"); App.Logger.WriteLine("Watcher::Mutex", "Mutex already exists, too late?"); }
             catch { mutexd = new Mutex(true, "ROBLOX_singletonMutex"); App.Logger.WriteLine("Watcher::Mutex", "Mutex created"); }
 
-            Task.Run(() => watcher.Run(mutexd)).ContinueWith(t => 
+            var watcher = new Watcher(mutexd);
+
+            Task.Run(watcher.Run).ContinueWith(t => 
             {
                 App.Logger.WriteLine(LOG_IDENT, "Watcher task has finished");
 
