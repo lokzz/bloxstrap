@@ -108,8 +108,10 @@ namespace Bloxstrap
 
             ActivityWatcher?.Start();
 
-            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId) && _mutexd != null)
-                await Task.Delay(1000); App.Logger.WriteLine("Watcher::Run", "Waiting for Roblox to close (ugh.)");
+            while (Utilities.GetProcessesSafe().Any(x => x.ProcessName == "RobloxPlayerBeta") && _mutexd != null){
+                await Task.Delay(1000);
+                //App.Logger.WriteLine("Watcher::Run", "Waiting for roblox(s) to die...");
+            }
 
             if (_watcherData.AutoclosePids is not null)
             {

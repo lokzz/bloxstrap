@@ -245,6 +245,7 @@ namespace Bloxstrap
             // - watcher task: runs activity watcher + waiting for roblox to close, terminates when it has >> fork: this also handles mutex watching now :v <<
 
             // i dont line putting it here, but roblox is faster than the watcher task :/
+            // also why is there only one single watcher// nvm i get it (kinda annoying tho?)
             App.Logger.WriteLine("Watcher::Mutex", "Creating singleton mutex");
             Mutex? mutexd = null;
             try { Mutex.OpenExisting("ROBLOX_singletonMutex"); App.Logger.WriteLine("Watcher::Mutex", "Mutex already exists, too late?"); }
