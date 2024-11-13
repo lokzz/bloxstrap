@@ -5,8 +5,8 @@
 / not my problem lmao
 
 // wher download??? //\
-/ go to https://github.com/lokzz/bloxstrap/actions\
-/ and download bloxstrap (called artifacts) from the latest workflow\
+/ go to https://github.com/lokzz/bloxstrap/actions \
+/ and download bloxstrap (called artifacts) from the latest workflow
 
 // compile??? whats that??? //\
 / clone and cd to base folder\
