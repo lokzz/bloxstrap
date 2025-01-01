@@ -16,9 +16,15 @@ namespace Bloxstrap
 
         public readonly DiscordRichPresence? RichPresence;
 
-        public Watcher()
+        public readonly IntegrationWatcher? IntegrationWatcher;
+
+        public Mutex? _mutexd = null;
+
+        public Watcher(Mutex? mutexd = null)
         {
             const string LOG_IDENT = "Watcher";
+
+            _mutexd = mutexd;
 
             if (!_lock.IsAcquired)
             {
@@ -63,6 +69,8 @@ namespace Bloxstrap
 
                 if (App.Settings.Prop.UseDiscordRichPresence)
                     RichPresence = new(ActivityWatcher);
+                
+                IntegrationWatcher = new IntegrationWatcher(ActivityWatcher);
             }
 
             _notifyIcon = new(this);
@@ -105,8 +113,10 @@ namespace Bloxstrap
 
             ActivityWatcher?.Start();
 
-            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId))
+            while (Utilities.GetProcessesSafe().Any(x => x.ProcessName == "RobloxPlayerBeta") && _mutexd != null){
                 await Task.Delay(1000);
+                //App.Logger.WriteLine("Watcher::Run", "Waiting for roblox(s) to die...");
+            }
 
             if (_watcherData.AutoclosePids is not null)
             {
@@ -122,6 +132,7 @@ namespace Bloxstrap
         {
             App.Logger.WriteLine("Watcher::Dispose", "Disposing Watcher");
 
+            IntegrationWatcher?.Dispose();
             _notifyIcon?.Dispose();
             RichPresence?.Dispose();
 

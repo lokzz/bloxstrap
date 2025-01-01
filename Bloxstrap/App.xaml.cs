@@ -204,12 +204,12 @@ namespace Bloxstrap
             }
             else
             {
-                Logger.WriteLine(LOG_IDENT, $"Compiled {BuildMetadata.Timestamp.ToFriendlyString()} from {BuildMetadata.Machine}");
+                Logger.WriteLine(LOG_IDENT, $"Compiled {BuildMetadata.Timestamp.ToFriendlyString()} from _somewhere");
 
 #if QA_BUILD
                 userAgent += " (QA)";
 #else
-                userAgent += $" (Build {Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildMetadata.Machine))})";
+                userAgent += $" (Build {Convert.ToBase64String(Encoding.UTF8.GetBytes("pizza no"))})";
 #endif
             }
 
