@@ -9,23 +9,16 @@ namespace Bloxstrap.Utility
 {
     internal static class Filesystem
     {
-        internal static long GetFreeDiskSpace(string p)
+        internal static long GetFreeDiskSpace(string path)
         {
-            try {
-                if (!Path.IsPathRooted(p) || !Path.IsPathFullyQualified(p)) {
-                    return -1;
-                }
-                var root = Path.GetPathRoot(p);
-                if (root != null) {
-                    var drive = new DriveInfo(root);
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                // https://github.com/bloxstraplabs/bloxstrap/issues/1648#issuecomment-2192571030
+                if (path.ToUpperInvariant().StartsWith(drive.Name))
                     return drive.AvailableFreeSpace;
-                } else {
-                    throw new ArgumentException("Invalid path", nameof(p));
-                }
-            } catch (ArgumentException e) {
-                App.Logger.WriteLine("Filesystem::BadPath", $"The path: {e} does not contain valid drive info.");
-                return -1;
             }
+
+            return -1;
         }
 
         internal static void AssertReadOnly(string filePath)
@@ -37,6 +30,16 @@ namespace Bloxstrap.Utility
 
             fileInfo.IsReadOnly = false;
             App.Logger.WriteLine("Filesystem::AssertReadOnly", $"The following file was set as read-only: {filePath}");
+        }
+
+        internal static void AssertReadOnlyDirectory(string directoryPath)
+        {
+            var directory = new DirectoryInfo(directoryPath) { Attributes = FileAttributes.Normal };
+
+            foreach (var info in directory.GetFileSystemInfos("*", SearchOption.AllDirectories))
+                info.Attributes = FileAttributes.Normal;
+
+            App.Logger.WriteLine("Filesystem::AssertReadOnlyDirectory", $"The following directory was set as read-only: {directoryPath}");
         }
     }
 }

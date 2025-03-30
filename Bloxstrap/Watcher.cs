@@ -16,15 +16,9 @@ namespace Bloxstrap
 
         public readonly DiscordRichPresence? RichPresence;
 
-        public readonly IntegrationWatcher? IntegrationWatcher;
-
-        public Mutex? _mutexd = null;
-
-        public Watcher(Mutex? mutexd = null)
+        public Watcher()
         {
             const string LOG_IDENT = "Watcher";
-
-            _mutexd = mutexd;
 
             if (!_lock.IsAcquired)
             {
@@ -34,21 +28,21 @@ namespace Bloxstrap
 
             string? watcherDataArg = App.LaunchSettings.WatcherFlag.Data;
 
-#if DEBUG
             if (String.IsNullOrEmpty(watcherDataArg))
             {
+#if DEBUG
                 string path = new RobloxPlayerData().ExecutablePath;
                 using var gameClientProcess = Process.Start(path);
 
                 _watcherData = new() { ProcessId = gameClientProcess.Id };
-            }
 #else
-            if (String.IsNullOrEmpty(watcherDataArg))
                 throw new Exception("Watcher data not specified");
 #endif
-
-            if (!String.IsNullOrEmpty(watcherDataArg))
+            }
+            else
+            {
                 _watcherData = JsonSerializer.Deserialize<WatcherData>(Encoding.UTF8.GetString(Convert.FromBase64String(watcherDataArg)));
+            }
 
             if (_watcherData is null)
                 throw new Exception("Watcher data is invalid");
@@ -69,8 +63,6 @@ namespace Bloxstrap
 
                 if (App.Settings.Prop.UseDiscordRichPresence)
                     RichPresence = new(ActivityWatcher);
-                
-                IntegrationWatcher = new IntegrationWatcher(ActivityWatcher);
             }
 
             _notifyIcon = new(this);
@@ -113,10 +105,8 @@ namespace Bloxstrap
 
             ActivityWatcher?.Start();
 
-            while (Utilities.GetProcessesSafe().Any(x => x.ProcessName == "RobloxPlayerBeta") && _mutexd != null){
+            while (Utilities.GetProcessesSafe().Any(x => x.Id == _watcherData.ProcessId))
                 await Task.Delay(1000);
-                //App.Logger.WriteLine("Watcher::Run", "Waiting for roblox(s) to die...");
-            }
 
             if (_watcherData.AutoclosePids is not null)
             {
@@ -132,7 +122,6 @@ namespace Bloxstrap
         {
             App.Logger.WriteLine("Watcher::Dispose", "Disposing Watcher");
 
-            IntegrationWatcher?.Dispose();
             _notifyIcon?.Dispose();
             RichPresence?.Dispose();
 
