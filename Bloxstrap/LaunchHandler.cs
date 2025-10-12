@@ -72,7 +72,8 @@ namespace Bloxstrap
             else if (!App.LaunchSettings.QuietFlag.Active)
             {
                 App.Logger.WriteLine(LOG_IDENT, "Opening menu");
-                LaunchMenu();
+                // commented out due to bug... fix later* (no one uses this anyway.. right?)
+                // LaunchMenu();
             }
             else
             {
@@ -223,7 +224,7 @@ namespace Bloxstrap
                 App.Terminate(ErrorCode.ERROR_FILE_NOT_FOUND);
             }
 
-            if (App.Settings.Prop.ConfirmLaunches && Mutex.TryOpenExisting("ROBLOX_singletonMutex", out var _))
+            if (App.Settings.Prop.ConfirmLaunches && Mutex.TryOpenExisting("ROBLOX_singletonMutex", out var _) && !App.Settings.Prop.MultiInstanceLaunching)
             {
                 // this currently doesn't work very well since it relies on checking the existence of the singleton mutex
                 // which often hangs around for a few seconds after the window closes
@@ -284,7 +285,7 @@ namespace Bloxstrap
 
             var watcher = new Watcher();
 
-            Task.Run(watcher.Run).ContinueWith(t => 
+            Task.Run(watcher.Run).ContinueWith(t =>
             {
                 App.Logger.WriteLine(LOG_IDENT, "Watcher task has finished");
 
@@ -301,6 +302,29 @@ namespace Bloxstrap
                 App.Terminate();
             });
         }
+        
+        public static void LaunchMultiInstanceWatcher()
+        {
+            const string LOG_IDENT = "LaunchHandler::LaunchMultiInstanceWatcher";
+
+            App.Logger.WriteLine(LOG_IDENT, "Starting multi-instance watcher");
+
+            Task.Run(MultiInstanceWatcher.Run).ContinueWith(t =>
+            {
+                App.Logger.WriteLine(LOG_IDENT, "Multi instance watcher task has finished");
+
+                if (t.IsFaulted)
+                {
+                    App.Logger.WriteLine(LOG_IDENT, "An exception occurred when running the multi-instance watcher");
+
+                    if (t.Exception is not null)
+                        App.FinalizeExceptionHandling(t.Exception);
+                }
+
+                App.Terminate();
+            });
+        }
+
 
         public static void LaunchBackgroundUpdater()
         {
