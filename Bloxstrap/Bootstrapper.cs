@@ -500,12 +500,12 @@ namespace Bloxstrap
 
             SetStatus(Strings.Bootstrapper_Status_Starting);
 
-            if (_launchMode == LaunchMode.Player)
-            {
-                // this needs to be done before roblox launches
-                if (App.Settings.Prop.MultiInstanceLaunching)
-                    LaunchMultiInstanceWatcher();
-            }
+            // if (_launchMode == LaunchMode.Player)
+            // {
+            //     // this needs to be done before roblox launches
+            //     if (true)
+            //         LaunchMultiInstanceWatcher();
+            // }
 
 
             var startInfo = new ProcessStartInfo()
